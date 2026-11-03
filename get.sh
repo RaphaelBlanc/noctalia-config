@@ -21,6 +21,10 @@ main() {
   fi
 
   if ! command -v git >/dev/null 2>&1; then
+    if [ -r /etc/os-release ] && [ "$(. /etc/os-release; echo "${ID:-}")" = nixos ]; then
+      echo "NixOS : lance nix-shell -p git curl, puis clone le dépôt et suis docs/nixos.md." >&2
+      return 1
+    fi
     local pm="" cmd=""
     if command -v pacman >/dev/null 2>&1; then pm=pacman; cmd="pacman -S --needed git"
     elif command -v apt-get >/dev/null 2>&1; then pm=apt; cmd="apt install sudo git"

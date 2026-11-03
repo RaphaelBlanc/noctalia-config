@@ -1,5 +1,9 @@
 # noctalia-config
 
+> **Prototype communautaire NixOS** : cette branche du fork ajoute un module NixOS
+> et un test en VM. Le portage est proposé pour relecture dans l'[issue #39](https://github.com/abcdef123456-wq/noctalia-config/issues/39).
+> Guide et limites : [NixOS](docs/nixos.md). Le dépôt amont ne propose pas encore de support officiel de NixOS.
+
 [![Tests](https://github.com/abcdef123456-wq/noctalia-config/actions/workflows/tests.yml/badge.svg)](https://github.com/abcdef123456-wq/noctalia-config/actions/workflows/tests.yml)
 
 À chaque push et à chaque PR sur main, la CI lance toute la suite de tests sur Arch, Debian 13, Fedora et openSUSE :
@@ -83,7 +87,8 @@ faites) : seul ce qui manque ou a changé est fait.
 | Debian 13, Debian Sid, Ubuntu 26.04 | Noctalia via le dépôt officiel de Noctalia (le script te montre les adresses et demande avant). Debian 13 : Hyprland 0.55, Noctalia et TLP viennent de « trixie-backports », la source officielle de Debian pour les versions récentes, que le script propose d'activer ; Neovim récent (0.11+) proposé depuis neovim.io |
 | openSUSE Tumbleweed et Slowroll | Noctalia via le dépôt indiqué par la documentation (idem) |
 | openSUSE Leap 15.6 | pas géré par l'installateur : seulement `./install.sh --files-only`, avec Hyprland 0.55+, Noctalia v5 et `python3` en 3.8 ou plus installés par toi-même (le Python 3.6 de Leap ne suffit pas : le script s'arrête) |
-| Autres (NixOS, Gentoo…) | installe-les toi-même ([guide](https://docs.noctalia.dev/noctalia/getting-started/installation/)), puis relance le script |
+| NixOS (prototype de ce fork) | module NixOS pour les paquets et services système, puis `./install.sh` pour les fichiers et services utilisateur : [guide NixOS](docs/nixos.md) (Hyprland 0.55+, nixos-unstable conseillé) |
+| Autres (Gentoo…) | installe-les toi-même ([guide](https://docs.noctalia.dev/noctalia/getting-started/installation/)), puis relance le script |
 
 Hyprland doit être en version **0.55 ou plus** (le script vérifie). Les paquets dont le nom diffère selon la distribution sont
 essayés un par un : ce qui manque est signalé à la fin sans tout arrêter. Hors Arch, la police du terminal

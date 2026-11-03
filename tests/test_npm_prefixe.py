@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 SOURCE = (REPO / "install.sh").read_text()
 ASK = SOURCE[SOURCE.index("sans_tty() {"):SOURCE.index("have() {")]
 SONDE = SOURCE[SOURCE.index("sonder() {"):SOURCE.index("choisir() {")]
-NPM = SOURCE[SOURCE.index("# ── 3d. npm"):SOURCE.index("# ── 4. Services de la session")]
+NPM = SOURCE[SOURCE.index("# ── 3d. npm"):SOURCE.index("# Fin des étapes impératives du terminal")]
 DIAG = REPO / "home/.local/bin/nc-diag"
 NCIA = REPO / "home/.local/bin/nc-ia"
 ENGINES = "^22.22.2 || ^24.15.0 || >=26.0.0"   # npm 12.2.1

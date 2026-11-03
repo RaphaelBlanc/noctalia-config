@@ -39,6 +39,8 @@ osr() { sed -n "s/^$1=//p" "$os_release" 2>/dev/null | tail -1 | tr -d "\"'"; } 
 os_id="$(osr ID)"
 gestionnaire() {
   local - x g
+  # Un gestionnaire installé dans un environnement de développement ne gère pas NixOS.
+  [ "$os_id" != nixos ] || return 0
   set -f                                     # ID_LIKE découpé en mots, jamais développé en noms de fichiers (« * »)
   for x in $os_id $(osr ID_LIKE); do
     case "$x" in
