@@ -19,13 +19,36 @@ Item {
                                    : (Agents.attendTerminal ? "claude"
                                    : (Etat.aMusique ? "musique" : (Agents.travaille ? "claude" : (Etat.minuteurFin > 0 ? "minuteur"
                                    : (Terminal.enCours ? "terminal" : "repos")))))
-    readonly property real largeur: Math.max(110, actif.implicitWidth + 32)
+    readonly property real largeur: Math.max(110, actif.implicitWidth + 32) + (CloudEtat.visible ? 30 : 0)
     implicitHeight: 30
     // Le point (x, y) de l'île tombe-t-il sur l'indicateur VPN de la pilule au repos ? (le clic ouvre alors le panneau VPN)
     function surVpn(x, y) {
         if (!VpnEtat.indicateur || mode !== "repos") return false
         var p = c.mapToItem(pastilleVpn, x, y)
         return p.x >= -4 && p.x <= pastilleVpn.width + 4 && p.y >= -6 && p.y <= pastilleVpn.height + 6
+    }
+    // Le point (x, y) de l'île tombe-t-il sur l'indicateur Tour de la pilule au repos ? (le clic ouvre alors le panneau Tour)
+    function surTour(x, y) {
+        if (!TourEtat.indicateur || mode !== "repos") return false
+        var p = c.mapToItem(pastilleTour, x, y)
+        return p.x >= -4 && p.x <= pastilleTour.width + 4 && p.y >= -6 && p.y <= pastilleTour.height + 6
+    }
+
+    readonly property bool cloudSurvole: survolCloud.hovered
+    function surCloud(x, y) {
+        if (!CloudEtat.visible) return false
+        var p = c.mapToItem(pastilleCloud, x, y)
+        return p.x >= -3 && p.x <= pastilleCloud.width + 3 && p.y >= -3 && p.y <= pastilleCloud.height + 3
+    }
+    Item {
+        id: pastilleCloud
+        objectName: "nc-cloud-pill"
+        HoverHandler { id: survolCloud }
+        anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
+        width: 22; height: 24; visible: CloudEtat.visible
+        Ico { anchors.centerIn: parent; nom: "cloud"; taille: 17; color: CloudEtat.enLigne ? Couleurs.accent : Couleurs.orange }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Cloud JARVIS"
     }
 
     readonly property Item actif: ({ repos: repos, musique: musique, volume: jauge, luminosite: jauge,
@@ -39,6 +62,7 @@ Item {
     component Fondu: Row {
         property bool montre: false
         anchors.centerIn: parent
+        anchors.horizontalCenterOffset: CloudEtat.visible ? -15 : 0
         spacing: 9
         opacity: montre ? 1 : 0
         visible: opacity > 0.01
@@ -83,6 +107,17 @@ Item {
             Texte { objectName: "nc-vpn-pill-texte"; anchors.verticalCenter: parent.verticalCenter; text: VpnEtat.libelle; secondaire: true
                     font.pixelSize: 12; elide: Text.ElideRight; width: Math.min(implicitWidth, 150) }
             Accessible.role: Accessible.StaticText; Accessible.name: VpnEtat.libelle
+        }
+        // Indicateur Tour (TourEtat.qml, nc-tour indicateur) : affiché dès que la tour est allumée ou en stream ; un clic ouvre le panneau Tour
+        Row {
+            id: pastilleTour
+            objectName: "nc-tour-pill"
+            anchors.verticalCenter: parent.verticalCenter; spacing: 4
+            visible: TourEtat.indicateur
+            Ico { objectName: "nc-tour-pill-glyphe"; anchors.verticalCenter: parent.verticalCenter; nom: "desktop_windows"; taille: 15; color: TourEtat.enStream ? Couleurs.accent : Couleurs.vert }
+            Texte { objectName: "nc-tour-pill-texte"; anchors.verticalCenter: parent.verticalCenter; text: TourEtat.libelle; secondaire: true
+                    font.pixelSize: 12; elide: Text.ElideRight; width: Math.min(implicitWidth, 140) }
+            Accessible.role: Accessible.StaticText; Accessible.name: TourEtat.libelle
         }
         // Un mode Concentration actif (Modes.qml) : son icône et son nom court ; le nom est caché pendant un partage d'écran
         Row {

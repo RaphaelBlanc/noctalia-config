@@ -78,6 +78,8 @@ HOME_FILES=(
   .local/share/nc/finger.png
   .local/share/nc/emoji
   .local/share/nc/logos
+  .local/share/nc-partage
+  .local/bin/nc-partage
   .local/bin/nc-apps
   .local/bin/nc-boot-wallpaper
   .local/bin/nc-brightness
@@ -95,6 +97,12 @@ HOME_FILES=(
   .local/bin/nc-assistant-install
   .local/libexec/nc-vpn-installer
   .local/bin/nc-garmin
+  .local/bin/nc-xwayland-primaire
+  .local/bin/nc-tour
+  .local/share/noctalia/plugins/nc-tour
+  .local/bin/nc-cloud
+  .local/share/nc-cloud
+  ".local/share/nautilus/scripts/Envoyer vers Cloud JARVIS"
   .local/libexec/nc-garmin-connecteur.py
   .local/libexec/nc-garmin-login.py
   .local/share/nc/garmin-requirements.txt
@@ -181,12 +189,14 @@ HOME_FILES=(
   .local/bin/nc-energie-liste
   .local/bin/cmatrix
   .local/bin/unimatrix
+  .local/share/applications/nc-partage.desktop
   .local/share/applications/nc-assistant.desktop
   .local/share/applications/nc-jarvis.desktop
   .local/share/applications/nc-jarvis-chat.desktop
   .local/share/applications/nc-reglages.desktop
   .local/share/applications/dropterm.desktop
   .local/share/kio/servicemenus/nc-ia.desktop
+  ".local/share/nautilus/scripts/Envoyer à un appareil"
   .local/share/nautilus/scripts/IA
   .local/share/nemo/actions/nc-ia-expliquer.nemo_action
   .local/share/nemo/actions/nc-ia-resumer.nemo_action

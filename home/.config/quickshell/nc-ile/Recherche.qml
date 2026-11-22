@@ -683,6 +683,7 @@ Item {
         { t: Reglages.t("Économie d'énergie", "Power saver"), k: "économie batterie eco énergie power saver low battery energy", g: "battery_saver", ppd: true, f: () => Etat.choisirProfil(PowerProfile.PowerSaver) },
         { t: Reglages.t("Équilibré", "Balanced"), k: "équilibré énergie normal balanced power energy", g: "battery_full", ppd: true, f: () => Etat.choisirProfil(PowerProfile.Balanced) },
         { t: "Performance", k: "performance énergie puissance nvidia power energy", g: "bolt", ppd: true, f: () => Etat.choisirProfil(PowerProfile.Performance) },
+        { t: Reglages.t("Appairer un appareil · Partage de proximité", "Pair a device · Nearby sharing"), k: "appairer partage fichiers proximité réseau wifi pair nearby share files", g: "devices", f: () => { Etat.fermer(); Quickshell.execDetached([Etat.bin + "nc-partage"]) } },
         { t: Reglages.t("Activer ou couper le Wi-Fi", "Turn Wi-Fi On or Off"), k: "wifi wi-fi réseau internet network", g: "wifi", wifi: true, f: () => Etat.inverser("wifi", ["noctalia", "msg", "wifi-toggle"]) },
         { t: Reglages.t("Activer ou couper le Bluetooth", "Turn Bluetooth On or Off"), k: "bluetooth", g: "bluetooth", f: () => Etat.inverser("bluetooth", ["noctalia", "msg", "bluetooth-toggle"]) },
         { t: Reglages.t("Concentration", "Do Not Disturb"), k: "concentration ne pas déranger dnd notifications focus do not disturb", g: "dark_mode", f: () => Notifs.basculerConcentration() },

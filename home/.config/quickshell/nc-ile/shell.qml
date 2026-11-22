@@ -155,6 +155,37 @@ ShellRoot {
     }
     // Panneau VPN (Super + Alt + V, nc-vpn) : les tunnels VPN et WireGuard de NetworkManager ; créé à l'ouverture seulement
     property bool vpnOuvert: false
+    property bool cloudOuvert: false
+    property var cloudEcran: null
+    property var demandePartage: null
+    function livrerPartage() {
+        if (demandePartage && chargeurCloud.item) {
+            chargeurCloud.item.ouvrirPartage(demandePartage)
+            demandePartage = null
+        }
+    }
+    function afficherCloud() {
+        if (!cloudOuvert) cloudEcran = Quickshell.screens.find(s => Hyprland.focusedMonitor && s.name === Hyprland.focusedMonitor.name) || Quickshell.screens[0]
+        Etat.fermer()
+        cloudOuvert = true
+    }
+    LazyLoader {
+        id: chargeurCloud
+        active: racine.cloudOuvert
+        Cloud {
+            Component.onCompleted: Qt.callLater(racine.livrerPartage)
+            screen: racine.cloudEcran
+            onFermer: racine.cloudOuvert = false
+        }
+    }
+    Connections {
+        target: CloudEtat
+        function onOuvrirPanneau() { racine.afficherCloud() }
+        function onBasculerPanneau() {
+            if (racine.cloudOuvert) racine.cloudOuvert = false
+            else racine.afficherCloud()
+        }
+    }
     LazyLoader {
         id: chargeurVpn
         active: racine.vpnOuvert
@@ -166,6 +197,20 @@ ShellRoot {
     Connections {
         target: VpnEtat
         function onOuvrirPanneau() { if (!racine.vpnOuvert) { Etat.fermer(); Hyprland.refreshMonitors(); racine.vpnOuvert = true } }
+    }
+    // Panneau Tour (Super + Alt + T, nc-tour) : réveil WoL, streaming Sunshine/Moonlight, télémétrie RX 7800 XT et Ollama distant
+    property bool tourOuvert: false
+    LazyLoader {
+        id: chargeurTour
+        active: racine.tourOuvert
+        Tour {
+            screen: Quickshell.screens.find(s => Hyprland.focusedMonitor && s.name === Hyprland.focusedMonitor.name) || Quickshell.screens[0]
+            onFermer: racine.tourOuvert = false
+        }
+    }
+    Connections {
+        target: TourEtat
+        function onOuvrirPanneau() { if (!racine.tourOuvert) { Etat.fermer(); Hyprland.refreshMonitors(); racine.tourOuvert = true } }
     }
     // Panneau Santé Garmin (Super + Alt + S, nc-garmin) : créé à l'ouverture seulement
     property bool garminOuvert: false
@@ -221,6 +266,28 @@ ShellRoot {
             Etat.fermer()
             if (!racine.vpnOuvert) Hyprland.refreshMonitors()
             racine.vpnOuvert = !racine.vpnOuvert
+        }
+        function partageFichiers(selection: string): void {
+            racine.demandePartage = JSON.parse(selection)
+            racine.afficherCloud()
+            racine.livrerPartage()
+        }
+        function cloud(selection: string): void {
+            racine.afficherCloud()
+            if (selection && selection !== "[]") {
+                try {
+                    var fichiers = JSON.parse(selection.startsWith("json:") ? selection.slice(5) : selection)
+                    if (!Array.isArray(fichiers)) throw new Error("Sélection cloud invalide")
+                    if (fichiers.length > 0) CloudEtat.deposer(fichiers)
+                }
+                catch (e) { CloudEtat.message = "Sélection cloud invalide" }
+            }
+        }
+        // Panneau Tour (Super + Alt + T, nc-tour) : ouvre ; déjà ouvert, le referme
+        function tour(): void {
+            Etat.fermer()
+            if (!racine.tourOuvert) Hyprland.refreshMonitors()
+            racine.tourOuvert = !racine.tourOuvert
         }
         // Panneau Santé Garmin (Super + Alt + S) : ouvre ; déjà ouvert, le referme
         function garmin(): void {

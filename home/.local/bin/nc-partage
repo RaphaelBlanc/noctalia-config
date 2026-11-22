@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Ouvre le partage dans la fenêtre Cloud de l’île."""
+import argparse
+import json
+import os
+from pathlib import Path
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--bluetooth", action="store_true")
+parser.add_argument("files", nargs="*")
+args = parser.parse_args()
+files = [p if p.startswith("file://") else Path(p).absolute().as_uri() for p in args.files]
+request = json.dumps(dict(mode="bt" if args.bluetooth else "ip", files=files))
+os.execlp("qs", "qs", "-c", "nc-ile", "ipc", "call", "ile", "partageFichiers", request)

@@ -31,7 +31,7 @@ hl.window_rule({ name = "sans-nom", match = { class = "^$", title = "^$" }, no_i
 -- Mode souris (nc-reglages → Clavier et souris, SAISIE=souris) : fenêtres libres et centrées, comme sur Windows
 -- (automatismes.lua les rouvre ensuite à la place et à la taille où tu les as laissées)
 if nc.reglage("SAISIE", "clavier") == "souris" then
-    hl.window_rule({ name = "souris-libres", match = { class = ".*", title = "negative:^(JARVIS|Réglages du bureau|Desktop settings|VPN|Garmin)$" }, float = true, center = true })   -- sauf le cockpit, les réglages et la fenêtre VPN, placés par nc/automatismes.lua
+    hl.window_rule({ name = "souris-libres", match = { class = ".*", title = "negative:^(JARVIS|Réglages du bureau|Desktop settings|VPN|Garmin|Cloud JARVIS( · Partage de proximité)?)$" }, float = true, center = true })   -- sauf le cockpit, les réglages et la fenêtre VPN, placés par nc/automatismes.lua
     hl.window_rule({ name = "souris-terminal", match = { class = "^(kitty)$" }, size = { "monitor_w*0.5", "monitor_h*0.55" } })
 end
 hl.window_rule({ name = "hyprland-run",match = { class = "hyprland-run" }, float = true, move = "20 monitor_h-120" })
@@ -103,13 +103,16 @@ hl.window_rule({
     float = true,
 })
 -- Jeux (Steam, Proton, gamescope) : marqués « jeu » (fréquence variable, affichage direct) ; en mode jeu
--- (Super + Alt + G), image envoyée sans attendre l'écran (latence minimale)
-hl.window_rule({
+-- (Super + Alt + G), image envoyée sans attendre l'écran (latence minimale). JEUX_PLEIN_ECRAN=oui : ouverts en plein
+-- écran (fullscreen, pas fullscreen_state, qui casse F11) ; à non, la clé n'est pas posée du tout (rien ne change)
+local jeux = {
     name      = "jeux",
     match     = { class = "^(steam_app_.*|gamescope|.*\\.exe)$" },
     content   = "game",
     immediate = true,
-})
+}
+if nc.reglage("JEUX_PLEIN_ECRAN", false) then jeux.fullscreen = true end
+hl.window_rule(jeux)
 
 -- Pas de mise en veille pendant une vidéo en plein écran
 hl.window_rule({ name = "video-plein-ecran", match = { class = ".*" }, idle_inhibit = "fullscreen" })
@@ -150,5 +153,9 @@ end
 -- Règle limitée à ce titre ET à la classe de Quickshell (« VPN » seul est un titre courant). Sa taille et sa place (centrée sous la barre) sont posées à l'ouverture par nc/automatismes.lua :
 -- la mémoire des fenêtres flottantes écraserait une règle size/move, et cette fenêtre en est exclue.
 hl.window_rule({ name = "nc-vpn-fenetre", match = { class = "^(org.quickshell)$", title = "^(VPN)$" }, float = true })
+hl.window_rule({ name = "nc-tour-fenetre", match = { class = "^(org.quickshell)$", title = "^(Tour)$" }, float = true })
 -- Fenêtre Santé Garmin de l'île (Super + Alt + S ; Garmin.qml) : titre exact « Garmin », flottante ; placée comme le VPN par nc/automatismes.lua
 hl.window_rule({ name = "nc-garmin-fenetre", match = { class = "^(org.quickshell)$", title = "^(Garmin)$" }, float = true })
+
+-- Cloud personnel : même fenêtre flottante centrée que VPN et Garmin.
+hl.window_rule({ name = "nc-cloud-fenetre", match = { class = "^(org.quickshell)$", title = "^Cloud JARVIS( · Partage de proximité)?$" }, float = true })

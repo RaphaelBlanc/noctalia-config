@@ -1,0 +1,709 @@
+#!/usr/bin/env python3
+"""nc-tour : pilotage de la Tour (Nobara / RX 7800 XT) depuis le bureau (panneau Tour de l'île, Super + Alt + T).
+  nc-tour etat-json           état complet en JSON pour le panneau Tour.qml
+  nc-tour indicateur --json   état rapide pour la pilule et la tuile du Centre de contrôle
+  nc-tour liste               résumé en clair (notifications / terminal)
+  nc-tour action-rapide       clic simple sur la tuile du Centre : réveille la tour si éteinte, sinon lance le stream Bureau
+  nc-tour reveiller [--json]  envoie un Magic Packet Wake-on-LAN (localement + via homeserver sur la Livebox)
+  nc-tour veille [--json]     met la tour en veille (systemctl suspend via SSH)
+  nc-tour redemarrer [--json] redémarre la tour
+  nc-tour eteindre [--json]   éteint la tour
+  nc-tour stream [APP] [--ecran principal|virtuel] [--profil qualite|equilibre|turquie] [--json]
+                              lance Moonlight vers la tour (APP : Desktop, Ecran Virtuel, Steam Big Picture)
+  nc-tour couper-stream [--json]
+                              ferme Moonlight et remet l'affichage physique de la tour si l'écran virtuel était actif
+  nc-tour profil ID [--json]  applique un profil de latence/qualité dans Moonlight.conf (qualite, equilibre, turquie)
+  nc-tour ia basculer|local|tour [--json]
+                              bascule OLLAMA_HOST dans ~/.config/nc/ia.conf entre ce PC et la RX 7800 XT de la tour
+  nc-tour ssh                 ouvre un terminal kitty connecté en SSH à la tour
+  nc-tour code                ouvre VS Code / Antigravity connecté en Remote-SSH sur la tour
+"""
+from pathlib import Path
+import json
+import os
+import re
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import time
+import urllib.request
+
+TOUR_IP_TS = "198.51.100.10"
+TOUR_IP_LAN = "192.0.2.39"
+TOUR_HOST = "tour-exemple.invalid"
+TOUR_NOM = "Tour-Exemple"
+TOUR_MAC_ETH = "02:00:00:00:00:01"
+TOUR_MAC_WIFI = "02:00:00:00:00:02"
+HOMESERVER_SSH = "demo@203.0.113.15"
+
+HOME = Path.home()
+IA_CONF = HOME / ".config/nc/ia.conf"
+MOONLIGHT_CONF = HOME / ".var/app/com.moonlight_stream.Moonlight/config/Moonlight Game Streaming Project/Moonlight.conf"
+STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
+ETAT_CACHE = STATE_DIR / "nc-tour-etat.json"
+
+PROFILS = {
+    "qualite": {
+        "id": "qualite",
+        "nom": "Qualité Max (LAN / Fibre)",
+        "detail": "1440p · 120 FPS · 50 Mbps · AV1",
+        "width": 2560,
+        "height": 1440,
+        "fps": 120,
+        "bitrate": 50000,
+        "packetSize": 1024,
+    },
+    "equilibre": {
+        "id": "equilibre",
+        "nom": "Équilibré (60 FPS)",
+        "detail": "1440p · 60 FPS · 25 Mbps · AV1",
+        "width": 2560,
+        "height": 1440,
+        "fps": 60,
+        "bitrate": 25000,
+        "packetSize": 1024,
+    },
+    "turquie": {
+        "id": "turquie",
+        "nom": "Ultra Basse Latence (Turquie)",
+        "detail": "1080p · 60 FPS · 10 Mbps · AV1",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "bitrate": 10000,
+        "packetSize": 1024,
+    },
+}
+
+
+def _stream_en_cours() -> bool:
+    try:
+        # Un stream Moonlight actif maintient une connexion TCP ESTABLISHED avec la tour (ports RTSP/HTTPS 47984/47989/48010)
+        r = subprocess.run(
+            ["ss", "-tn", "state", "established"],
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+        )
+        for l in r.stdout.splitlines():
+            if TOUR_IP_TS in l or TOUR_IP_LAN in l:
+                if any(f":{p}" in l for p in ("47984", "47989", "47999", "48010")):
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def _tailscale_info() -> dict:
+    info = {
+        "en_ligne": False,
+        "mode": "hors_ligne",
+        "relais": "",
+        "ping_ms": -1,
+        "ip": TOUR_IP_TS,
+    }
+    try:
+        r = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            for peer in (data.get("Peer") or {}).values():
+                ips = peer.get("TailscaleIPs") or []
+                if TOUR_IP_TS in ips or peer.get("HostName") == "tour-exemple":
+                    en_ligne = bool(peer.get("Online"))
+                    info["en_ligne"] = en_ligne
+                    if en_ligne:
+                        cur = peer.get("CurAddr") or ""
+                        relay = peer.get("Relay") or ""
+                        if cur:
+                            info["mode"] = "direct"
+                        elif relay:
+                            info["mode"] = "relais"
+                            info["relais"] = relay
+                        else:
+                            info["mode"] = "tailscale"
+                    break
+    except Exception:
+        pass
+
+    # Vérification rapide TCP sur Sunshine (47989) ou SSH (22) si Tailscale annonce en ligne
+    if info["en_ligne"]:
+        t0 = time.monotonic()
+        try:
+            with socket.create_connection((TOUR_IP_TS, 22), timeout=0.8):
+                info["ping_ms"] = max(1, int(round((time.monotonic() - t0) * 1000)))
+        except Exception:
+            # Peut-être éteinte récemment mais Tailscale met 1-2 min à marquer offline
+            info["en_ligne"] = False
+            info["mode"] = "hors_ligne"
+    return info
+
+
+def _lire_profil_actuel() -> str:
+    if not MOONLIGHT_CONF.exists():
+        return "equilibre"
+    try:
+        txt = MOONLIGHT_CONF.read_text(errors="ignore")
+        w = re.search(r"^width=(\d+)", txt, re.M)
+        fps = re.search(r"^fps=(\d+)", txt, re.M)
+        br = re.search(r"^bitrate=(\d+)", txt, re.M)
+        wv = int(w.group(1)) if w else 2560
+        fpsv = int(fps.group(1)) if fps else 60
+        brv = int(br.group(1)) if br else 25000
+        if fpsv >= 100 or brv >= 40000:
+            return "qualite"
+        if wv <= 1920 or brv <= 15000:
+            return "turquie"
+    except Exception:
+        pass
+    return "equilibre"
+
+
+def _appliquer_profil(profil_id: str) -> bool:
+    p = PROFILS.get(profil_id)
+    if not p or not MOONLIGHT_CONF.exists():
+        return False
+    try:
+        lignes = MOONLIGHT_CONF.read_text(errors="ignore").splitlines()
+        cles = {"width", "height", "fps", "bitrate", "packetSize", "captureSysKeysMode", "videoCodecConfig", "videoDecoderSelection", "enableVsync", "framePacing"}
+        out = []
+        ajoute = False
+        for l in lignes:
+            k = l.split("=", 1)[0].strip()
+            if k in cles:
+                continue
+            out.append(l)
+            if l.strip() == "[General]" and not ajoute:
+                ajoute = True
+                out.extend([
+                    "captureSysKeysMode=2",
+                    "videoCodecConfig=3",
+                    "videoDecoderSelection=1",
+                    "enableVsync=false",
+                    "framePacing=false",
+                    f"width={p['width']}",
+                    f"height={p['height']}",
+                    f"fps={p['fps']}",
+                    f"bitrate={p['bitrate']}",
+                    f"packetSize={p['packetSize']}",
+                ])
+        MOONLIGHT_CONF.write_text("\n".join(out) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def _ia_tour_active() -> bool:
+    if not IA_CONF.exists():
+        return False
+    try:
+        for l in IA_CONF.read_text(errors="ignore").splitlines():
+            if l.strip().startswith("OLLAMA_HOST="):
+                return TOUR_IP_TS in l
+    except Exception:
+        pass
+    return False
+
+
+def _basculer_ia(mode: str) -> bool:
+    """mode: 'tour', 'local', ou 'basculer'."""
+    actuel = _ia_tour_active()
+    cible_tour = (not actuel) if mode == "basculer" else (mode == "tour")
+    IA_CONF.parent.mkdir(parents=True, exist_ok=True)
+    lignes = IA_CONF.read_text(errors="ignore").splitlines() if IA_CONF.exists() else []
+    out = [l for l in lignes if not l.strip().startswith("OLLAMA_HOST=")]
+    if cible_tour:
+        out.append(f"OLLAMA_HOST=http://{TOUR_IP_TS}:11434")
+    IA_CONF.write_text("\n".join(out) + "\n")
+    try:
+        os.chmod(IA_CONF, 0o600)
+    except Exception:
+        pass
+    return cible_tour
+
+
+def _telemetrie_tour() -> dict:
+    """Récupère CPU, GPU RX 7800 XT, VRAM, Sunshine, Écran virtuel et Ollama en un seul appel SSH court."""
+    defaut = {
+        "cpu_pct": -1,
+        "cpu_temp": -1,
+        "ram_utilisee_go": -1.0,
+        "ram_totale_go": 31.0,
+        "gpu_pct": -1,
+        "gpu_temp": -1,
+        "vram_utilisee_go": -1.0,
+        "vram_totale_go": 16.0,
+        "sunshine_actif": False,
+        "ecran_virtuel": False,
+        "ollama_actif": False,
+        "ollama_modeles": [],
+    }
+    script = r"""
+python3 - << 'PY'
+import glob, json, os, subprocess
+
+res = {
+    "cpu_pct": -1, "cpu_temp": -1,
+    "ram_utilisee_go": -1.0, "ram_totale_go": 31.0,
+    "gpu_pct": -1, "gpu_temp": -1,
+    "vram_utilisee_go": -1.0, "vram_totale_go": 16.0,
+    "sunshine_actif": False, "ecran_virtuel": False,
+    "ollama_actif": False, "ollama_modeles": []
+}
+
+# CPU loadavg / cores
+try:
+    load1, _, _ = os.getloadavg()
+    ncpu = os.cpu_count() or 20
+    res["cpu_pct"] = min(100, max(0, int(round(load1 * 100 / ncpu))))
+except Exception:
+    pass
+
+# RAM
+try:
+    mem = {}
+    for l in open("/proc/meminfo"):
+        k, v = l.split(":", 1)
+        mem[k.strip()] = int(v.strip().split()[0])
+    tot = mem.get("MemTotal", 0) / 1048576
+    avail = mem.get("MemAvailable", 0) / 1048576
+    res["ram_totale_go"] = round(tot, 1)
+    res["ram_utilisee_go"] = round(max(0.0, tot - avail), 1)
+except Exception:
+    pass
+
+# GPU AMD RX 7800 XT (/sys/class/drm/card*)
+for d in sorted(glob.glob("/sys/class/drm/card*/device")):
+    bp = os.path.join(d, "gpu_busy_percent")
+    vt = os.path.join(d, "mem_info_vram_total")
+    vu = os.path.join(d, "mem_info_vram_used")
+    if os.path.exists(vt):
+        try:
+            res["vram_totale_go"] = round(int(open(vt).read().strip()) / 1073741824, 1)
+            res["vram_utilisee_go"] = round(int(open(vu).read().strip()) / 1073741824, 1)
+        except Exception:
+            pass
+    if os.path.exists(bp):
+        try:
+            res["gpu_pct"] = int(open(bp).read().strip())
+        except Exception:
+            pass
+    for hm in glob.glob(os.path.join(d, "hwmon/hwmon*/temp1_input")):
+        try:
+            res["gpu_temp"] = int(round(int(open(hm).read().strip()) / 1000))
+        except Exception:
+            pass
+
+# CPU temp
+for hm in glob.glob("/sys/class/hwmon/hwmon*"):
+    try:
+        name = open(os.path.join(hm, "name")).read().strip()
+        if name in ("coretemp", "k10temp", "acpitz"):
+            t = int(open(os.path.join(hm, "temp1_input")).read().strip()) // 1000
+            if t > 0:
+                res["cpu_temp"] = t
+                break
+    except Exception:
+        pass
+
+# Sunshine
+try:
+    r = subprocess.run(["pgrep", "-x", "sunshine"], stdout=subprocess.DEVNULL)
+    res["sunshine_actif"] = (r.returncode == 0)
+except Exception:
+    pass
+
+# Hyprland headless output
+try:
+    sig_dir = "/run/user/1000/hypr"
+    if os.path.isdir(sig_dir):
+        sigs = os.listdir(sig_dir)
+        if sigs:
+            env = dict(os.environ, HYPRLAND_INSTANCE_SIGNATURE=sigs[0], XDG_RUNTIME_DIR="/run/user/1000")
+            r = subprocess.run(["hyprctl", "monitors"], capture_output=True, text=True, env=env, timeout=1.0)
+            res["ecran_virtuel"] = ("HEADLESS-" in r.stdout)
+except Exception:
+    pass
+
+# Ollama
+try:
+    import urllib.request
+    with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=0.8) as resp:
+        data = json.loads(resp.read().decode())
+        res["ollama_actif"] = True
+        res["ollama_modeles"] = [m.get("name", "") for m in (data.get("models") or [])[:6] if m.get("name")]
+except Exception:
+    pass
+
+print(json.dumps(res))
+PY
+"""
+    try:
+        r = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=2", "-o", "BatchMode=yes", TOUR_HOST, script],
+            capture_output=True,
+            text=True,
+            timeout=3.5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            d = json.loads(r.stdout.strip().splitlines()[-1])
+            defaut.update(d)
+    except Exception:
+        pass
+    return defaut
+
+
+def _envoyer_wol_local(mac_hex: str) -> None:
+    raw = bytes.fromhex(mac_hex.replace(":", "").replace("-", ""))
+    pkt = b"\xff" * 6 + raw * 16
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        for bcast in ("255.255.255.255", "192.0.2.255", "198.51.100.255"):
+            try:
+                s.sendto(pkt, (bcast, 9))
+            except Exception:
+                pass
+
+
+def cmd_reveiller() -> tuple[bool, str]:
+    # 1. Envoi local direct (si sur le même LAN)
+    for mac in (TOUR_MAC_ETH, TOUR_MAC_WIFI):
+        try:
+            _envoyer_wol_local(mac)
+        except Exception:
+            pass
+
+    # 2. Envoi via le homeserver (toujours allumé sur la Livebox 192.0.2.0/24)
+    py_wol = (
+        "import socket; "
+        f"macs=['{TOUR_MAC_ETH}','{TOUR_MAC_WIFI}']; "
+        "s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); "
+        "s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1); "
+        "[s.sendto(b'\\xff'*6+bytes.fromhex(m.replace(':',''))*16,('192.0.2.255',9)) for m in macs]; "
+        "print('WOL_OK')"
+    )
+    try:
+        r = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", "-i", str(HOME / ".ssh/id_ed25519"), HOMESERVER_SSH, f"python3 -c \"{py_wol}\""],
+            capture_output=True,
+            text=True,
+            timeout=6.0,
+        )
+        if "WOL_OK" in r.stdout:
+            return True, "Paquet Wake-on-LAN envoyé (local + relais Home Server)."
+    except Exception:
+        pass
+    return True, "Paquet Wake-on-LAN envoyé sur le réseau local."
+
+
+def _preparer_ecran_tour(mode_ecran: str, profil_id: str) -> None:
+    """Configure l'écran de la tour avant de lancer Moonlight (principal ou virtuel headless)."""
+    p = PROFILS.get(profil_id, PROFILS["equilibre"])
+    w, h, fps = p["width"], p["height"], p["fps"]
+    if mode_ecran == "virtuel":
+        remote_cmd = f"""
+export XDG_RUNTIME_DIR=/run/user/1000
+export HYPRLAND_INSTANCE_SIGNATURE=$(ls -1 /run/user/1000/hypr/ 2>/dev/null | head -n 1)
+if ! hyprctl monitors | grep -q "HEADLESS-"; then
+    hyprctl output create headless
+    sleep 0.4
+fi
+HEADLESS=$(hyprctl monitors | awk '/Monitor HEADLESS-/{{print $2}}' | head -n 1)
+if [ -n "$HEADLESS" ]; then
+    hyprctl keyword monitor "$HEADLESS,{w}x{h}@{fps},2560x0,1"
+    hyprctl dispatch dpms off HDMI-A-1
+fi
+"""
+    else:
+        remote_cmd = """
+export XDG_RUNTIME_DIR=/run/user/1000
+export HYPRLAND_INSTANCE_SIGNATURE=$(ls -1 /run/user/1000/hypr/ 2>/dev/null | head -n 1)
+for m in $(hyprctl monitors | awk '/Monitor HEADLESS-/{print $2}'); do
+    hyprctl output remove "$m"
+done
+hyprctl dispatch dpms on HDMI-A-1
+"""
+    try:
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=2", "-o", "BatchMode=yes", TOUR_HOST, remote_cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=4.0,
+        )
+    except Exception:
+        pass
+
+
+def cmd_stream(app: str, mode_ecran: str, profil_id: str) -> tuple[bool, str]:
+    if profil_id in PROFILS:
+        _appliquer_profil(profil_id)
+    else:
+        profil_id = _lire_profil_actuel()
+
+    ts = _tailscale_info()
+    if not ts["en_ligne"]:
+        return False, "La tour est actuellement hors ligne. Allume-la d'abord ou vérifie sa connexion Wi-Fi/Ethernet."
+
+    _preparer_ecran_tour(mode_ecran, profil_id)
+
+    # Vérifier que Sunshine répond bien sur Tailscale ; s'il est figé, le relancer automatiquement
+    try:
+        urllib.request.urlopen(f"http://{TOUR_IP_TS}:47989/serverinfo", timeout=1.5).read(64)
+    except Exception:
+        try:
+            subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=2", "-o", "BatchMode=yes", TOUR_HOST,
+                 "systemctl --user restart app-dev.lizardbyte.app.Sunshine.service && sleep 5"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10.0,
+            )
+        except Exception:
+            pass
+
+    env = dict(os.environ)
+    env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+
+    subprocess.Popen(
+        [
+            "systemd-run", "--user", "--collect",
+            f"--setenv=WAYLAND_DISPLAY={env['WAYLAND_DISPLAY']}",
+            f"--setenv=XDG_RUNTIME_DIR={env['XDG_RUNTIME_DIR']}",
+            "flatpak", "run", "com.moonlight_stream.Moonlight",
+            "stream",
+            "--display-mode", "fullscreen",
+            "--capture-system-keys", "never",
+            "--video-codec", "AV1",
+            "--video-decoder", "hardware",
+            "--no-vsync",
+            "--no-frame-pacing",
+            "--quit-after",
+            "--resolution", f"{PROFILS[profil_id]['width']}x{PROFILS[profil_id]['height']}",
+            "--fps", str(PROFILS[profil_id]["fps"]),
+            "--bitrate", str(PROFILS[profil_id]["bitrate"]),
+            "--packet-size", str(PROFILS[profil_id]["packetSize"]),
+            TOUR_IP_TS, app,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return True, f"Stream « {app} » lancé ({PROFILS[profil_id]['nom']})."
+
+
+def cmd_couper_stream() -> tuple[bool, str]:
+    subprocess.run(["pkill", "-f", "com.moonlight_stream.Moonlight"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _preparer_ecran_tour("principal", _lire_profil_actuel())
+    return True, "Stream Moonlight arrêté et écran physique de la tour rétabli."
+
+
+def cmd_power(action: str) -> tuple[bool, str]:
+    cmds = {
+        "veille": ("systemctl suspend", "Mise en veille de la tour envoyée."),
+        "redemarrer": ("sudo -n systemctl reboot || systemctl reboot", "Redémarrage de la tour envoyé."),
+        "eteindre": ("sudo -n systemctl poweroff || systemctl poweroff", "Arrêt de la tour envoyé."),
+    }
+    if action not in cmds:
+        return False, "Action inconnue."
+    cmd, msg = cmds[action]
+    try:
+        r = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=2", "-o", "BatchMode=yes", TOUR_HOST, cmd],
+            capture_output=True,
+            text=True,
+            timeout=4.0,
+        )
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip()
+            return False, f"Droits insuffisants sur la tour ({err or 'code ' + str(r.returncode)})."
+        return True, msg
+    except Exception as e:
+        return False, f"Impossible de joindre la tour en SSH ({e})."
+
+
+def etat_complet() -> dict:
+    ts = _tailscale_info()
+    en_stream = _stream_en_cours()
+    profil = _lire_profil_actuel()
+    ia_tour = _ia_tour_active()
+    tele = _telemetrie_tour() if ts["en_ligne"] else {
+        "cpu_pct": -1, "cpu_temp": -1,
+        "ram_utilisee_go": -1.0, "ram_totale_go": 31.0,
+        "gpu_pct": -1, "gpu_temp": -1,
+        "vram_utilisee_go": -1.0, "vram_totale_go": 16.0,
+        "sunshine_actif": False, "ecran_virtuel": False,
+        "ollama_actif": False, "ollama_modeles": [],
+    }
+    res = {
+        "contrat": 1,
+        "nom": TOUR_NOM,
+        "ip": TOUR_IP_TS,
+        "en_ligne": ts["en_ligne"],
+        "en_stream": en_stream,
+        "mode_reseau": ts["mode"],
+        "relais": ts["relais"],
+        "ping_ms": ts["ping_ms"],
+        "profil": profil,
+        "profils": list(PROFILS.values()),
+        "ia_tour": ia_tour,
+        **tele,
+    }
+    try:
+        ETAT_CACHE.write_text(json.dumps(res))
+    except Exception:
+        pass
+    return res
+
+
+def indicateur_rapide() -> dict:
+    ts = _tailscale_info()
+    en_stream = _stream_en_cours()
+    ia_tour = _ia_tour_active()
+    if en_stream:
+        libelle = "Tour · Stream"
+    elif ts["en_ligne"]:
+        libelle = f"Tour · {ts['ping_ms']} ms" if ts["ping_ms"] > 0 else "Tour · En ligne"
+    else:
+        libelle = "Tour · Éteinte"
+    return {
+        "disponible": True,
+        "en_ligne": ts["en_ligne"],
+        "en_stream": en_stream,
+        "ia_tour": ia_tour,
+        "ping_ms": ts["ping_ms"],
+        "mode_reseau": ts["mode"],
+        "libelle": libelle,
+    }
+
+
+def main():
+    args = sys.argv[1:]
+    cmd = args[0] if args else "etat-json"
+    en_json = "--json" in args
+
+    if cmd in ("indicateur",):
+        print(json.dumps(indicateur_rapide(), ensure_ascii=False))
+        return
+
+    if cmd in ("etat-json", "status"):
+        print(json.dumps(etat_complet(), ensure_ascii=False))
+        return
+
+    if cmd == "liste":
+        d = indicateur_rapide()
+        etat = "En stream (Moonlight)" if d["en_stream"] else ("Allumée (" + str(d["ping_ms"]) + " ms)" if d["en_ligne"] else "Hors ligne / Éteinte")
+        print(f"Tour ({TOUR_IP_TS}) : {etat}")
+        return
+
+    if cmd == "action-rapide":
+        d = indicateur_rapide()
+        if d["en_stream"]:
+            ok, msg = cmd_couper_stream()
+        elif d["en_ligne"]:
+            ok, msg = cmd_stream("Desktop", "principal", _lire_profil_actuel())
+        else:
+            ok, msg = cmd_reveiller()
+        subprocess.Popen(["notify-send", "-a", "Tour", "-t", "2500", "Tour Exemple", msg])
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg}, ensure_ascii=False))
+        return
+
+    if cmd == "reveiller":
+        ok, msg = cmd_reveiller()
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd in ("veille", "redemarrer", "eteindre"):
+        ok, msg = cmd_power(cmd)
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd == "stream":
+        app = "Desktop"
+        ecran = "principal"
+        profil = _lire_profil_actuel()
+        i = 1
+        while i < len(args):
+            a = args[i]
+            if a == "--ecran" and i + 1 < len(args):
+                ecran = args[i + 1]
+                i += 2
+            elif a == "--profil" and i + 1 < len(args):
+                profil = args[i + 1]
+                i += 2
+            elif a == "--json":
+                i += 1
+            else:
+                app = a
+                i += 1
+        ok, msg = cmd_stream(app, ecran, profil)
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd == "couper-stream":
+        ok, msg = cmd_couper_stream()
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd == "profil" and len(args) >= 2:
+        ok = _appliquer_profil(args[1])
+        msg = f"Profil {args[1]} appliqué." if ok else "Profil invalide."
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": ok, "message": msg, "profil": _lire_profil_actuel()}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd == "ia":
+        sous = args[1] if len(args) >= 2 and not args[1].startswith("-") else "basculer"
+        actif = _basculer_ia(sous)
+        msg = "Ollama pointé vers la Tour (RX 7800 XT)." if actif else "Ollama remis sur ce PC portable."
+        if en_json:
+            print(json.dumps({"contrat": 1, "ok": True, "ia_tour": actif, "message": msg}, ensure_ascii=False))
+        else:
+            print(msg)
+        return
+
+    if cmd == "ssh":
+        subprocess.Popen(["kitty", "--title", "SSH Tour (Nobara)", "ssh", TOUR_HOST])
+        return
+
+    if cmd == "code":
+        editeur = "agy" if shutil.which("agy") else ("code" if shutil.which("code") else "")
+        if editeur:
+            subprocess.Popen([editeur, "--remote", f"ssh-remote+{TOUR_HOST}", "@HOME@"])
+        else:
+            subprocess.Popen(["kitty", "--title", "SSH Tour (Nobara)", "ssh", TOUR_HOST])
+        return
+
+    if cmd == "moonlight":
+        env = dict(os.environ)
+        env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+        subprocess.Popen([
+            "systemd-run", "--user", "--collect",
+            f"--setenv=WAYLAND_DISPLAY={env['WAYLAND_DISPLAY']}",
+            f"--setenv=XDG_RUNTIME_DIR={env['XDG_RUNTIME_DIR']}",
+            "flatpak", "run", "com.moonlight_stream.Moonlight"
+        ])
+        return
+
+
+if __name__ == "__main__":
+    main()

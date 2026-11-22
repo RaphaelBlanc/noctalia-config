@@ -1,0 +1,29 @@
+# Écrit par nc-reglages (tes réglages de Noctalia). Ne pas éditer : nc-reglages.
+
+[nightlight]
+enabled = true
+force = false
+temperature_night = 4000
+
+[location]
+custom_schedule = true
+sunset = "21:00"
+sunrise = "07:00"
+
+[lockscreen]
+transition = ["fade"]
+
+[bar.default]
+end = ["group:sys", "tray", "nc/vpn:vpn", "nc/tour:tour", "nc/garmin:garmin", "power_profile", "group:status"]
+
+[widget.tray]
+hidden = ["nordvpn-tray-white", "nordvpn-tray-black", "nordvpn-tray", "nordvpn", "nordvpn-gui", "protonvpn-app", "proton-vpn-app", "protonvpn", "Proton VPN", "ProtonVPN", "mullvad-vpn", "Mullvad VPN", "mullvad-gui"]
+
+[widget.network]
+vpn_status = "hidden"
+
+[dock]
+enabled = false
+
+[wallpaper.automation]
+enabled = false

@@ -1,0 +1,3 @@
+# Préférence personnelle : un seul indicateur VPN, la pilule dédiée.
+[widget.network]
+vpn_status = "hidden"

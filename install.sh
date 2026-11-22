@@ -454,6 +454,12 @@ pname() {
     qalc:fedora) echo qalculate ;;       # /usr/bin/qalc (libqalculate n'a que la bibliothèque)
     qalc:debian) echo qalc ;;
     qalc:suse) echo qalculate ;;
+    python-gtk:arch) echo python-gobject ;;
+    python-gtk:fedora) echo python3-gobject ;;
+    python-gtk:debian) echo python3-gi ;;
+    python-gtk:suse) echo python3-gobject ;;
+    gtk3:debian) echo gir1.2-gtk-3.0 ;;
+    gtk3:suse) echo typelib-1_0-Gtk-3_0 ;;
     bluez-utils:arch) echo bluez-utils ;;
     bluez-utils:*) echo bluez ;;
     checkupdates:arch) echo pacman-contrib ;;                      # compter les mises à jour (nc-paquets)
@@ -1266,7 +1272,7 @@ if [ "$MODE" != files ] && [ "$FAMILY" = fedora ] && ! ver_ge "$(qs_ver || true)
   fi
 fi
 GENERIC=(uwsm hypridle xdg-desktop-portal-hyprland xdg-desktop-portal-gtk kitty nautilus qt6ct papirus-icon-theme cava swaybg imagemagick
-         jq grim slurp swappy wl-clipboard wtype zenity brightnessctl libnotify python qalc playerctl fastfetch bluez-utils gdbus
+         jq grim slurp swappy wl-clipboard wtype zenity brightnessctl libnotify python qalc playerctl fastfetch openssl python-gtk gtk3 bluez-utils gdbus
          zsh git curl unzip xdg-utils nerdfont adwaita-fonts noto-fonts breeze quickshell sushi wf-recorder pilotes-va vainfo tesseract tesseract-fra tesseract-eng checkupdates
          sound-theme-freedesktop enregistreur inotify-tools nm-openvpn secret-tool)   # sound-theme-freedesktop : sons du minuteur et du Pomodoro ; inotify-tools : fin des téléchargements vue sans relevé (île) ; même nom sur les 4 distributions
 [ "$FAMILY" = suse ] && GENERIC+=(python-curses)
@@ -1277,7 +1283,7 @@ elif [ "$MODE" != files ]; then
   missing=(); missing_opt=(); manual=()
   # Arch : ces paquets améliorent le bureau mais ne sont pas nécessaires pour qu'il démarre ; ils sont proposés (une
   # question), jamais imposés, et un refus ou un échec ne casse rien
-  FACULTATIFS=(cava swappy wtype zenity qalc sushi wf-recorder pilotes-va vainfo tesseract tesseract-fra tesseract-eng
+  FACULTATIFS=(openssl python-gtk gtk3 cava swappy wtype zenity qalc sushi wf-recorder pilotes-va vainfo tesseract tesseract-fra tesseract-eng
                checkupdates sound-theme-freedesktop enregistreur breeze nerdfont adwaita-fonts noto-fonts nm-openvpn secret-tool)
   for g in "${GENERIC[@]}"; do
     p="$(pname "$g")"
@@ -1603,6 +1609,10 @@ while IFS= read -r -d '' src; do
   else
     cp "$src" "$tmp"
   fi
+  # Le choix du connecteur Garmin reste celui de l'installation, même avec les réglages du fork.
+  if [ "$rel" = .config/nc/reglages.conf ] && [ "$GARMIN" = 0 ]; then
+    sed -i '/^GARMIN_ACTIF=/d' "$tmp"
+  fi
   # NixOS : pas de /usr/bin, les programmes du système sont dans /run/current-system/sw/bin (copie installée seulement)
   if [ "$FAMILY" = nixos ]; then
     case "$rel" in .config/systemd/user/*) sed -i 's|/usr/bin/|/run/current-system/sw/bin/|g' "$tmp" ;; esac
@@ -1614,7 +1624,10 @@ while IFS= read -r -d '' src; do
   fi
   case "$rel" in
     # Jamais écrasés : tes images (fonds d'écran, photo de profil) et les fichiers régénérés automatiquement sur ce PC
-    Pictures/Wallpapers/* | .face | .config/hypr/nc/couleurs.lua | .config/hypr/nc/profil.lua | .config/kdeglobals \
+    .config/hypr/perso.lua | .config/nc/reglages.conf | .config/nc/ecrans.conf | .config/nc/raccourcis.conf \
+    | .config/nc/palette-ile.json | .config/kitty/nc-reglages.conf | .config/noctalia/zy-reglages.toml \
+    | .config/nc/style.conf | .config/nc/garmin/widgets.json | .config/noctalia/zz-vpn-affichage.toml \
+    | Pictures/Wallpapers/* | .face | .config/hypr/nc/couleurs.lua | .config/hypr/nc/profil.lua | .config/kdeglobals \
     | .config/noctalia/colors.json | .config/kitty/themes/noctalia-dynamic.conf)
       [ -e "$dst" ] && { same=$((same + 1)); continue; } ;;
   esac

@@ -1,0 +1,31 @@
+{
+ "sombre": true,
+ "fond": "#181e25",
+ "texte": "#f2f2f3",
+ "texteSec": "#afb2b6",
+ "texteDoux": "#d1d1d2",
+ "carte": "#20262e",
+ "carteSurvol": "#242a31",
+ "gris2": "#272e35",
+ "gris3": "#333941",
+ "gris4": "#3d444c",
+ "gris5": "#50575f",
+ "accent": "#679ee4",
+ "surAccent": "#181e25",
+ "surCouleur": "#181e25",
+ "rouge": "#ef86a0",
+ "vert": "#47c496",
+ "jaune": "#c9cb61",
+ "orange": "#fc9667",
+ "bleu": "#70adfb",
+ "violet": "#c293ea",
+ "rose": "#ddb9fd",
+ "cyan": "#70adfb",
+ "fondVert": "#22433e",
+ "fondOrange": "#4a3833",
+ "bordure": [
+  "#6aa2cc",
+  "#485e7a",
+  "#8ca0d8"
+ ]
+}

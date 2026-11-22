@@ -116,6 +116,13 @@ Item {
                 text: p.wifi ? Reglages.t("Le Wi-Fi est désactivé.", "Wi-Fi is off.") : Reglages.t("Le Bluetooth est désactivé.", "Bluetooth is off.")
             }
 
+            Ligne {
+                titre: Reglages.t("Appairer un appareil", "Pair a device")
+                sous: p.wifi ? Reglages.t("Partage de fichiers en Wi-Fi", "Share files over Wi-Fi") : Reglages.t("Partage de fichiers en Bluetooth", "Share files over Bluetooth")
+                icone: "devices"
+                onClic: { Etat.fermer(); Quickshell.execDetached(p.wifi ? [Etat.bin + "nc-partage"] : [Etat.bin + "nc-partage", "--bluetooth"]) }
+            }
+
             // ── Wi-Fi ──
             Titre { text: Reglages.t("Réseau actuel", "Current Network"); visible: p.wifi && p.allume && p.actuel.length > 0 }
             Repeater {

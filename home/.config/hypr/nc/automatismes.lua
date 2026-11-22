@@ -191,6 +191,9 @@ local PLEINE_PLACE = { ["JARVIS"] = true, ["Réglages du bureau"] = true, ["Desk
 -- cockpit JARVIS (sa place est fixe, voir plus bas).
 -- Fenêtre VPN de l'île (Vpn.qml, titre exact « VPN ») : placée plus bas, jamais mémorisée
 local FENETRE_VPN = "VPN"
+local FENETRE_CLOUD = "Cloud JARVIS"
+local PARTAGE_CLOUD = "Cloud JARVIS · Partage de proximité"
+local FENETRE_TOUR = "Tour"
 local FENETRE_GARMIN = "Garmin"   -- Garmin.qml, même traitement que le VPN
 local MEMOIRE = STATE .. "fenetres-flottantes"
 os.execute("mkdir -p '" .. STATE .. "'")
@@ -205,7 +208,7 @@ local function exclue(w)
         or c:lower():match("%.exe$") ~= nil          -- Roblox Studio aussi : ses boîtes Windows ne sont pas mémorisées
         or t:match("[Pp]icture") ~= nil or t:match("Incrustation") ~= nil
         or PLEINE_PLACE[t] or PLEINE_PLACE[w.title or ""]
-        or (w.class == "org.quickshell" and (t == FENETRE_VPN or w.title == FENETRE_VPN or t == FENETRE_GARMIN or w.title == FENETRE_GARMIN))
+        or (w.class == "org.quickshell" and (t == FENETRE_VPN or w.title == FENETRE_VPN or t == FENETRE_TOUR or w.title == FENETRE_TOUR or t == FENETRE_GARMIN or w.title == FENETRE_GARMIN or t == PARTAGE_CLOUD or w.title == PARTAGE_CLOUD or t == FENETRE_CLOUD or w.title == FENETRE_CLOUD))
 end
 
 -- Les 200 dernières seulement (un titre qui change à chaque fois en créerait sans fin) : le fichier est dans l'ordre
@@ -289,8 +292,8 @@ end)
 
 -- Fenêtre VPN de l'île (règle nc-vpn-fenetre : flottante) : centrée dans la zone utile de son écran (sous la barre), 900 de large
 -- au plus et 90 % de la hauteur utile au plus (son contenu défile). Placée ici, à l'ouverture, et non par une règle size/move.
-hl.on("window.open", function(w)
-    if not w or not w.floating or w.class ~= "org.quickshell" or not ((w.title or w.initial_title or "") == FENETRE_VPN or (w.title or w.initial_title or "") == FENETRE_GARMIN) then return end
+local function placer_panneau(w)
+    if not w or not w.floating or w.class ~= "org.quickshell" or not ((w.title or w.initial_title or "") == FENETRE_VPN or (w.title or w.initial_title or "") == FENETRE_TOUR or (w.title or w.initial_title or "") == FENETRE_GARMIN or (w.title or w.initial_title or "") == FENETRE_CLOUD or (w.title or w.initial_title or "") == PARTAGE_CLOUD) then return end
     local m = w.monitor or hl.get_active_monitor()
     local mx, my, lw, lh = ecran(w)
     if not (m and lw) then return end
@@ -298,9 +301,19 @@ hl.on("window.open", function(w)
     local rg, rh, rd, rb = r.left or r[1] or 0, r.top or r[2] or 0, r.right or r[3] or 0, r.bottom or r[4] or 0
     local arrondi = function(v) return math.floor(v + 0.5) end
     local zl, zh = lw - rg - rd, lh - rh - rb
-    local l, h = arrondi(math.min(900, zl * 0.92)), arrondi(math.min(780, zh * 0.9))
+    local l, h = math.min(900, zl * 0.92), math.min(780, zh * 0.9)
+    if w.title == PARTAGE_CLOUD then
+        -- Comme une tuile seule : Hyprland dessine la bordure autour de la surface.
+        local retrait = nc.reglage("FENETRES_MARGE", 10) + nc.reglage("FENETRES_BORDURE", 2)
+        l, h = math.max(1, zl - 2 * retrait), math.max(1, zh - 2 * retrait)
+    end
+    l, h = arrondi(l), arrondi(h)
     hl.dispatch(hl.dsp.window.resize({ x = l, y = h, window = w }))
     hl.dispatch(hl.dsp.window.move({ x = arrondi(mx + rg + (zl - l) / 2), y = arrondi(my + rh + (zh - h) / 2), window = w }))
+end
+hl.on("window.open", placer_panneau)
+hl.on("window.title", function(w)
+    if w and (w.title == FENETRE_CLOUD or w.title == PARTAGE_CLOUD) then placer_panneau(w) end
 end)
 
 -- Couvercle du portable : en mode « l'écran s'éteint, le PC continue » (nc-reglages, COUVERCLE=ecran), nc-couvercle

@@ -24,6 +24,7 @@ Singleton {
     property bool connecte: false
     property bool demo: false
     property bool pret: false
+    property real maj: 0
     property var widgetsActifs: []
     property var catalogue: []                    // [{id, nom, defaut, actif}]
     property var brut: ({})                       // les mesures telles que le moteur les donne : NE PAS lire hors de ce fichier
@@ -64,6 +65,9 @@ Singleton {
     onPanneauOuvertChanged: {
         if (panneauOuvert) { syncOuverture = false; relire() }
     }
+    Component.onCompleted: {
+        if (Reglages.val("GARMIN_ACTIF", "non") === "oui") relire()
+    }
 
     function appliquer(txt) {
         var d
@@ -71,6 +75,7 @@ Singleton {
         if (!d || d.erreur) { erreur = d && d.message ? String(d.message).slice(0, 240) : ""; return }
         actif = d.actif === true; installe = d.installe === true; connecte = d.connecte === true
         demo = d.demo === true; pret = d.pret === true
+        maj = typeof d.maj === "number" ? d.maj : 0
         widgetsActifs = d.widgets_actifs || []
         catalogue = d.widgets_catalogue || []
         brut = d.metriques || ({})

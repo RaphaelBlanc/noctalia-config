@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nearby sharing
+Name[fr]=Partage de proximité
+Comment=Pair a device or send files over Bluetooth or Wi-Fi
+Comment[fr]=Appairer un appareil ou envoyer des fichiers par Bluetooth ou Wi-Fi
+Exec="@HOME@/.local/bin/nc-partage" %F
+Icon=folder-publicshare
+Keywords=pair;share;files;
+Keywords[fr]=appairer;partage;fichiers;
+Terminal=false
+Categories=Network;FileTransfer;

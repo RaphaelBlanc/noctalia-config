@@ -1,0 +1,15 @@
+id          = "nc/tour"
+name        = "Pilule Tour"
+version     = "1.0.0"
+plugin_api  = 32
+author      = "noctalia-config"
+license     = "MIT"
+description = "Pilule Tour de la barre, à côté de la pilule VPN : icône écran et état (en ligne / ping / en stream / éteinte) ; un clic ouvre la fenêtre Tour de l'île (Super + Alt + T)."
+dependencies = ["qs"]
+
+[[widget]]
+id = "tour"
+entry = "tour.luau"
+
+  [widget.actions]
+  middle = "none"

@@ -36,9 +36,10 @@ Item {
         luminosite: { nom: Reglages.t("Luminosité", "Brightness"), icone: "light_mode", forme: "flex", maxi: 168 },
         volume: { nom: "Volume", icone: "volume_up", forme: "flex", maxi: 168 },
         energie: { nom: Reglages.t("Énergie", "Power"), icone: "bolt", forme: "bande" },
-        ia: { nom: Reglages.t("IA", "AI"), icone: "auto_awesome", forme: "petit" }
+        ia: { nom: Reglages.t("IA", "AI"), icone: "auto_awesome", forme: "petit" },
+        tour: { nom: Reglages.t("Tour", "Tower"), icone: "desktop_windows", forme: "petit" }
     })
-    readonly property var defaut: ["connexions", "musique", "nuit", "jeu", "luminosite", "volume", "energie", "ia"]
+    readonly property var defaut: ["connexions", "musique", "nuit", "jeu", "luminosite", "volume", "energie", "ia", "tour"]
     property var ordre: defaut
     property var masques: []
     readonly property var visibles: ordre.filter(id => masques.indexOf(id) < 0 && !(id === "energie" && Etat.profilsAbsents))
@@ -192,7 +193,7 @@ Item {
                 Behavior on y { enabled: centre.pret; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                 Loader {
                     anchors.fill: parent
-                    sourceComponent: ({ connexions: cConnexions, musique: cMusique, nuit: cNuit, jeu: cJeu, luminosite: cLuminosite, volume: cVolume, energie: cEnergie, ia: cIA })[case_.identifiant]
+                    sourceComponent: ({ connexions: cConnexions, musique: cMusique, nuit: cNuit, jeu: cJeu, luminosite: cLuminosite, volume: cVolume, energie: cEnergie, ia: cIA, tour: cTour })[case_.identifiant]
                 }
                 // Mode édition : voile, nom, œil et flèches ; le module en dessous ne réagit plus
                 Rectangle {
@@ -423,6 +424,18 @@ Item {
         Pastille {
             icone: "wb_twilight"; titre: Reglages.t("Nuit", "Night Shift"); sous: Etat.nuit ? Reglages.t("Tons chauds", "Warmer colors") : Reglages.t("Désactivée", "Off"); actif: Etat.nuit; couleur: centre.orange
             onClic: { Etat.nuit = !Etat.nuit; Etat.faire(["noctalia", "msg", "nightlight-force-toggle"]) }
+        }
+    }
+    Component {
+        id: cTour
+        Pastille {
+            icone: "desktop_windows"
+            titre: Reglages.t("Tour", "Tower")
+            sous: TourEtat.sousTitreTuile
+            actif: TourEtat.enLigne || TourEtat.enStream
+            couleur: TourEtat.enStream ? centre.bleu : centre.vert
+            onClic: TourEtat.demanderPanneau()
+            onAppuiLong: TourEtat.actionRapide()
         }
     }
     // IA du bureau (nc-ia) : clic, coupée partout ou rallumée (le mode d'avant, automatique ou choisi, revient) ;

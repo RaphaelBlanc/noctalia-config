@@ -242,7 +242,7 @@ PanelWindow {
         Timer {
             id: attenteSurvol
             interval: 280                           // juste passer dessus (vers la barre) ne l'ouvre pas
-            onTriggered: if (survol.hovered && Etat.ecranOuvert === "" && !fen.banniere && !fen.enCarte && !Etat.enregistre) {
+            onTriggered: if (survol.hovered && !compact.cloudSurvole && Etat.ecranOuvert === "" && !fen.banniere && !fen.enCarte && !Etat.enregistre) {
                 Etat.basculer(fen.modelData.name, false)
                 Etat.parSurvol = true
             }
@@ -372,17 +372,37 @@ PanelWindow {
             anchors.fill: parent
             enabled: !fen.ouverte && !fen.banniere && !fen.enCarte && !fen.pilCachee
             acceptedButtons: Qt.LeftButton | Qt.RightButton
-            onClicked: e => e.button === Qt.RightButton ? Etat.lecturePause()
+            onClicked: e => {
+                if (e.button === Qt.LeftButton && compact.surCloud(e.x, e.y)) { CloudEtat.basculerPanneau(); return }
+                e.button === Qt.RightButton ? Etat.lecturePause()
                             : (Etat.enregistre ? Etat.arreterVideo()
                                // « Bonjour » au réveil : un clic ouvre le résumé
                                : (Resume.actif && !Resume.ouvert && Etat.activiteType === "" ? Resume.ouvrir(fen.modelData.name)
                                // « Terminée » / « Échec » d'une commande longue : retour à son terminal
                                : (VpnEtat.indicateur && compact.surVpn(e.x, e.y) ? VpnEtat.demanderPanneau()
+                               : (TourEtat.indicateur && compact.surTour(e.x, e.y) ? TourEtat.demanderPanneau()
                                : (Etat.activiteType === "telechargement-fini" && Etat.dossierTel !== "" ? Etat.ouvrirTelechargements()
                                : (Etat.activiteType === "terminal-fini" && Terminal.fini ? Terminal.aller(Terminal.fini.pid)
                                // Un agent t'attend dans son terminal : sa question, directement
-                               : (Agents.ouvrirAttente(fen.modelData.name) || Etat.basculer(fen.modelData.name, false)))))))
+                               : (Agents.ouvrirAttente(fen.modelData.name) || Etat.basculer(fen.modelData.name, false))))))))
+            }
             onWheel: w => Etat.reglerVolume(Etat.volume + (w.angleDelta.y > 0 ? 0.05 : -0.05))
+        }
+
+        DropArea {
+            anchors.fill: parent
+            enabled: CloudEtat.active
+            onEntered: drag => {
+                if (!drag.hasUrls) { drag.accepted = false; return }
+                attenteSurvol.stop()
+            }
+            onDropped: drop => {
+                if (!drop.hasUrls) return
+                var urls = []; for (let i = 0; i < drop.urls.length; ++i) urls.push(String(drop.urls[i]))
+                Etat.fermer()
+                CloudEtat.deposer(urls)
+                drop.accept(Qt.CopyAction)
+            }
         }
 
         // Glisser entre les pages : molette ou deux doigts, partout dans l'île (les curseurs ne prennent pas la molette)

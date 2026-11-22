@@ -519,6 +519,9 @@ REGLAGES = [
         "pendant 3 s ; la page Son l'affiche à côté du casque. Rien si le casque ne donne pas son niveau.",
         "When headphones or earbuds that report their battery connect (AirPods…), the pill shows the name and level for 3 s; "
         "the Sound page shows it next to the device. Nothing if the device does not report its level.")),
+    R("CLOUD_JARVIS", "Agents IA (coucou)", L("Cloud JARVIS dans la barre", "JARVIS Cloud in the bar"), "ouinon", "non",
+      L("Serveur distant uniquement. Associe ce PC dans la fenêtre Cloud JARVIS. Les dépôts hors ligne sont refusés.",
+        "Remote server only. Associate this PC in the Cloud JARVIS window. Offline drops are refused.")),
     R("ILE_PRESSE_ACTIONS", "Île", L("Actions rapides du presse-papiers", "Clipboard quick actions"), "ouinon", "oui",
       L("Un texte copié qui est une couleur (pastille et conversions), un lien (Ouvrir), un chemin (Ouvrir le dossier) ou un "
         "calcul (résultat avec qalc, sans réseau) reçoit sa ligne d'action dans la page Presse-papiers. Rien n'est lancé sans ton clic, "
@@ -933,6 +936,9 @@ REGLAGES = [
         "While dragging, they align with the screen edges and the other windows."), groupe="hypr"),
     R("FENETRES_BORDURE_REDIM", "Fenêtres", L("Redimensionner en tirant la bordure", "Resize by dragging the border"), "ouinon", "oui",
       L("Non : seulement avec Super + clic droit (ou le raccourci).", "No: only with Super + right click (or the shortcut)."), groupe="hypr"),
+    R("JEUX_PLEIN_ECRAN", "Fenêtres", L("Jeux en plein écran", "Games in fullscreen"), "ouinon", "non",
+      L("Les jeux (Steam, Proton, gamescope) s'ouvrent en plein écran sur l'écran où ils démarrent. Non : ils gardent la taille qu'ils demandent.",
+        "Games (Steam, Proton, gamescope) open fullscreen on the screen where they start. No: they keep the size they ask for."), groupe="hypr"),
     R("FENETRES_FOCUS_DEMANDE", "Fenêtres", L("Une appli qui réclame l'attention passe devant", "An app asking for attention comes to front"), "ouinon", "oui",
       L("Non : elle clignote dans la barre, tu décides.", "No: it blinks in the bar, you decide."), groupe="hypr"),
     R("ECRAN_VRR", "Fenêtres", L("Fréquence variable de l'écran (FreeSync, G-Sync)", "Variable refresh rate (FreeSync, G-Sync)"), "choix", "auto",
@@ -2617,6 +2623,9 @@ def appliquer_noctalia(vals):
             if vals.get("VPN_PILULE_BARRE") == "oui" and PILULE_VPN not in fin:
                 i = fin.index("power_profile") if "power_profile" in fin else (fin.index("group:status") if "group:status" in fin else len(fin))
                 fin = fin[:i] + [PILULE_VPN] + fin[i:]
+            if "nc/tour:tour" not in fin and os.path.isfile(os.path.expanduser("~/.local/share/noctalia/plugins/nc-tour/plugin.toml")):
+                i = fin.index("power_profile") if "power_profile" in fin else len(fin)
+                fin.insert(i, "nc/tour:tour")
             # Pastille Garmin (plugin nc/garmin) : seulement si la santé Garmin ET sa pastille sont à oui, retirée sinon
             fin = [w for w in fin if w != PILULE_GARMIN]
             if vals.get("GARMIN_ACTIF") == "oui" and vals.get("GARMIN_PILULE_BARRE") == "oui":
@@ -4092,6 +4101,12 @@ def catalogue(vals):
                     choix=[], mini=0, maxi=0, pas=1, unite="", zero="", valeur="", affiche=T("Configurer…", "Configure…"),
                     modifie=False, groupe="", commande=["nc-assistant", "configurer"])]
     sec_ia = "Intelligence artificielle"
+    actions.append(dict(cle="action:jarvis-cloud", section="Agents IA (coucou)", sectionNom=nom_section("Agents IA (coucou)"),
+                        nom=T("Cloud JARVIS distant", "Remote JARVIS Cloud"), genre="action", defaut="",
+                        aide=T("Association du PC, dossiers distants, dépôt de fichiers et transferts.",
+                               "Associate this PC, browse remote folders, drop files and manage transfers."),
+                        choix=[], mini=0, maxi=0, pas=1, unite="", zero="", valeur="", affiche=T("Ouvrir…", "Open…"),
+                        modifie=False, groupe="", commande=["nc-cloud", "fenetre"]))
     for cle_a, nom_a, aide_a, cmd in reversed((
             ("action:ia-cles", T("Clés d'API des IA", "AI API keys"),
              T("Anthropic, OpenAI, Gemini, Mistral, Groq, DeepSeek, OpenRouter et l'adresse d'Ollama : saisie masquée, "
